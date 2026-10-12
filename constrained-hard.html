@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Strike — Constrained Hard Levels</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0d1119; color: #e8e8ec; font-family: -apple-system, "PingFang SC", "Segoe UI", sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+  h1 { font-size: 22px; margin-bottom: 4px; letter-spacing: 2px; }
+  .sub { color: #666; font-size: 13px; margin-bottom: 18px; }
+  .level-tabs { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; justify-content: center; }
+  .tab { background: #16161c; border: 1px solid #2a2a33; color: #ccc; padding: 10px 18px; border-radius: 10px; cursor: pointer; font-size: 14px; transition: all .15s; }
+  .tab:hover { border-color: #4da6ff; }
+  .tab.active { background: #1d2a3a; border-color: #4da6ff; color: #fff; }
+  .tab .k { color: #ffd166; font-weight: 600; }
+  .hud { display: flex; gap: 24px; margin-bottom: 12px; font-size: 14px; color: #999; }
+  .hud b { color: #ffd166; }
+  .hud .moves.warn { color: #e76e6e; }
+  #board-wrap { position: relative; }
+  canvas { display: block; border-radius: 12px; background: #11141c; cursor: pointer; }
+  .controls { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; justify-content: center; }
+  .btn { background: #1a2030; border: 1px solid #2a3a55; color: #cfe0ff; padding: 9px 16px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+  .btn:hover { background: #24304a; }
+  .btn.gold { border-color: #8a6d1f; color: #ffd166; }
+  .btn.gold:hover { background: #2a2410; }
+  .msg { margin-top: 12px; font-size: 16px; min-height: 24px; text-align: center; }
+  .msg.win { color: #6ee7a0; }
+  .msg.lose { color: #e76e6e; }
+  .sol-panel { margin-top: 10px; max-width: 640px; background: #141a26; border: 1px solid #2a3a55; border-radius: 10px; padding: 12px 16px; font-size: 13px; color: #9fb3d9; display: none; }
+  .sol-panel.show { display: block; }
+  .sol-panel .step { font-family: monospace; margin: 3px 0; }
+  .sol-panel .aha { color: #ffd166; margin-top: 8px; font-style: italic; }
+  .desc { max-width: 640px; color: #777; font-size: 13px; margin-bottom: 6px; text-align: center; line-height: 1.6; }
+  .legend { max-width: 640px; color: #5a6a8a; font-size: 12px; margin-bottom: 12px; text-align: center; }
+  .legend .cy { color: #4dd0e1; } .legend .gd { color: #ffd166; }
+</style>
+</head>
+<body>
+<h1>⚡ CONSTRAINED HARD</h1>
+<div class="sub">Strike — hard levels with guiding constraints · v1</div>
+<div class="level-tabs" id="tabs"></div>
+<div class="desc" id="desc"></div>
+<div class="legend"><span class="cy">→ cyan arrow</span> = current: you must move that direction through the cell &nbsp;·&nbsp; <span class="gd">◎ gold</span> = exit: finish here after all dots</div>
+<div class="hud">
+  <div>DOTS <b id="hud-dots">0/0</b></div>
+  <div class="moves">MOVES <b id="hud-moves">0/0</b></div>
+</div>
+<div id="board-wrap"><canvas id="board"></canvas></div>
+<div class="controls">
+  <button class="btn" id="btn-undo">↩ Undo</button>
+  <button class="btn" id="btn-reset">↺ Reset</button>
+  <button class="btn gold" id="btn-solution">💡 Show Solution</button>
+  <button class="btn" id="btn-play-sol">▶ Play Solution</button>
+</div>
+<div class="msg" id="msg"></div>
+<div class="sol-panel" id="sol-panel"></div>
+
+<script>
+'use strict';
+/* ================= LEVELS =================
+   currents: [x, y, dx, dy] — any move whose ray passes through (x,y)
+   must travel in direction (dx,dy). exit: [x,y] — must finish here. */
+var LEVELS = [
+  {
+    name: 'Comet Guided',
+    size: 13,
+    start: [12,0],
+    dots: [[0,0],[0,11],[3,3],[5,3],[6,1],[6,6],[7,3],[7,10],[8,2],[8,6],[9,8],[9,9],[9,11],[10,4],[11,10],[12,12]],
+    k: 10, optimal: 10,
+    exit: [11,5],
+    currents: [[12,5,0,1],[7,7,-1,-1],[9,5,0,-1],[5,10,1,0]],
+    desc: '13×13. Same starfield as the raw Comet, but now the exit anchors your plan and cyan currents mark the key rides. Follow the arrows — they trace the optimal route.',
+    hook: 'Exit anchors your plan; (12,12)→(0,0) diagonal chains 4 spine dots in one move. Currents turn search into reading.',
+    solution: [[12,12],[0,0],[0,11],[9,11],[9,1],[0,10],[12,10],[3,1],[7,1],[11,5]]
+  },
+  {
+    name: 'Trap Field Guided',
+    size: 11,
+    start: [6,6],
+    dots: [[7,5],[7,3],[7,0],[1,0],[3,2],[8,7],[8,5],[6,2],[4,4],[0,8],[5,8],[10,8]],
+    k: 8, optimal: 8,
+    exit: [10,0],
+    currents: [[7,3,0,-1],[8,5,0,-1],[6,2,-1,1]],
+    desc: '11×11. 12 dots, 8 moves — and you must finish at the gold exit (10,0). Three currents narrow the search: ride them and the route almost plans itself.',
+    hook: 'Exit at (10,0) says "end going north"; the key insight is the (1,0)→(8,7) diagonal chaining pickups.',
+    solution: [[7,5],[7,0],[1,0],[8,7],[8,0],[0,8],[10,8],[10,0]]
+  }
+];
+
+/* ================= ENGINE ================= */
+var DIRS = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+var canvas = document.getElementById('board');
+var ctx = canvas.getContext('2d');
+var cur = 0;
+var state = null;   // {pos, visited:{}, moves, status, path:[]}
+var history = [];   // undo stack of snapshots
+var cell = 40, pad = 24;
+var solPlaying = false, solTimer = null;
+
+function level() { return LEVELS[cur]; }
+function key(p) { return p[0] + ',' + p[1]; }
+function samePos(a, b) { return a[0] === b[0] && a[1] === b[1]; }
+function sign(x) { return x > 0 ? 1 : (x < 0 ? -1 : 0); }
+
+function isDot(p) {
+  var L = level();
+  for (var i = 0; i < L.dots.length; i++)
+    if (L.dots[i][0] === p[0] && L.dots[i][1] === p[1]) return true;
+  return false;
+}
+function currentAt(x, y) {
+  var L = level();
+  for (var i = 0; i < L.currents.length; i++) {
+    var c = L.currents[i];
+    if (c[0] === x && c[1] === y) return [c[2], c[3]];
+  }
+  return null;
+}
+/* true if the ray from->dest never fights a current */
+function rayClear(from, dest) {
+  var dx = sign(dest[0] - from[0]), dy = sign(dest[1] - from[1]);
+  var x = from[0], y = from[1];
+  var L = level();
+  while (true) {
+    var cdir = currentAt(x, y);
+    if (cdir && (cdir[0] !== dx || cdir[1] !== dy)) return false;
+    if (x === dest[0] && y === dest[1]) break;
+    x += dx; y += dy;
+    if (x < 0 || x >= L.size || y < 0 || y >= L.size) return false;
+  }
+  return true;
+}
+
+function initLevel(idx) {
+  cur = idx;
+  stopSolPlayback();
+  history = [];
+  var L = level();
+  state = { pos: L.start.slice(), visited: {}, moves: 0, status: 'playing', path: [L.start.slice()] };
+  if (isDot(L.start)) state.visited[key(L.start)] = true;
+  setMsg('');
+  var sp = document.getElementById('sol-panel');
+  sp.className = 'sol-panel'; sp.innerHTML = '';
+  document.getElementById('desc').textContent = L.desc;
+  sizeCanvas();
+  renderTabs();
+  render();
+  updateHud();
+}
+function setMsg(t, cls) {
+  var m = document.getElementById('msg');
+  m.textContent = t;
+  m.className = 'msg' + (cls ? ' ' + cls : '');
+}
+function sizeCanvas() {
+  var L = level();
+  cell = Math.min(44, Math.floor(560 / L.size));
+  var s = L.size * cell + pad * 2;
+  canvas.width = s; canvas.height = s;
+  canvas.style.width = s + 'px'; canvas.style.height = s + 'px';
+}
+function px(p) { return [pad + p[0] * cell + cell / 2, pad + p[1] * cell + cell / 2]; }
+
+function queenMoves(from) {
+  var L = level(), out = [];
+  for (var d = 0; d < DIRS.length; d++) {
+    var x = from[0] + DIRS[d][0], y = from[1] + DIRS[d][1];
+    while (x >= 0 && x < L.size && y >= 0 && y < L.size) {
+      out.push([x, y]);
+      x += DIRS[d][0]; y += DIRS[d][1];
+    }
+  }
+  return out;
+}
+
+function render() {
+  var L = level();
+  var s = canvas.width;
+  ctx.clearRect(0, 0, s, s);
+  // chessboard
+  for (var x = 0; x < L.size; x++) for (var y = 0; y < L.size; y++) {
+    if ((x + y) % 2 === 0) {
+      ctx.fillStyle = 'rgba(255,255,255,0.025)';
+      ctx.fillRect(pad + x * cell, pad + y * cell, cell, cell);
+    }
+  }
+  // current cell tint + arrows
+  for (var ci = 0; ci < L.currents.length; ci++) {
+    var cc = L.currents[ci], cp = px([cc[0], cc[1]]);
+    ctx.fillStyle = 'rgba(77,208,225,0.08)';
+    ctx.fillRect(pad + cc[0] * cell, pad + cc[1] * cell, cell, cell);
+    var ang = Math.atan2(cc[3], cc[2]);
+    var r = cell * 0.26;
+    ctx.strokeStyle = '#4dd0e1'; ctx.fillStyle = '#4dd0e1'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cp[0] - Math.cos(ang) * r, cp[1] - Math.sin(ang) * r);
+    ctx.lineTo(cp[0] + Math.cos(ang) * r, cp[1] + Math.sin(ang) * r);
+    ctx.stroke();
+    var hx = cp[0] + Math.cos(ang) * r, hy = cp[1] + Math.sin(ang) * r;
+    ctx.beginPath();
+    ctx.moveTo(hx, hy);
+    ctx.lineTo(hx - Math.cos(ang - 0.45) * r * 0.7, hy - Math.sin(ang - 0.45) * r * 0.7);
+    ctx.lineTo(hx - Math.cos(ang + 0.45) * r * 0.7, hy - Math.sin(ang + 0.45) * r * 0.7);
+    ctx.closePath(); ctx.fill();
+  }
+  // path
+  if (state.path.length > 1) {
+    ctx.strokeStyle = 'rgba(255,215,94,0.55)'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath();
+    var p0 = px(state.path[0]); ctx.moveTo(p0[0], p0[1]);
+    for (var pi = 1; pi < state.path.length; pi++) { var pp = px(state.path[pi]); ctx.lineTo(pp[0], pp[1]); }
+    ctx.stroke();
+  }
+  // move targets (only current-clear ones)
+  if (state.status === 'playing' && !solPlaying) {
+    var ms = queenMoves(state.pos);
+    ctx.fillStyle = 'rgba(120,170,255,0.18)';
+    for (var mi = 0; mi < ms.length; mi++) {
+      if (!rayClear(state.pos, ms[mi])) continue;
+      var mc = px(ms[mi]);
+      ctx.beginPath(); ctx.arc(mc[0], mc[1], cell * 0.14, 0, 7); ctx.fill();
+    }
+  }
+  // dots
+  for (var di = 0; di < L.dots.length; di++) {
+    var d = L.dots[di], c = px(d);
+    var done = state.visited[key(d)];
+    ctx.beginPath(); ctx.arc(c[0], c[1], cell * 0.22, 0, 7);
+    if (done) { ctx.fillStyle = 'rgba(255,255,255,0.12)'; }
+    else { ctx.fillStyle = '#f2f4f8'; ctx.shadowColor = '#fff'; ctx.shadowBlur = 6; }
+    ctx.fill(); ctx.shadowBlur = 0;
+  }
+  // exit: gold circle + progress ring
+  var ex = px(L.exit);
+  var total = L.dots.length, doneCount = 0;
+  for (var vi = 0; vi < L.dots.length; vi++) if (state.visited[key(L.dots[vi])]) doneCount++;
+  var allDone = doneCount === total;
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = allDone ? '#ffd75e' : 'rgba(255,215,94,0.55)';
+  if (allDone) { ctx.shadowColor = '#ffd75e'; ctx.shadowBlur = 10; }
+  ctx.beginPath(); ctx.arc(ex[0], ex[1], cell * 0.30, 0, 7); ctx.stroke();
+  ctx.shadowBlur = 0;
+  var rr = cell * 0.40, frac = total > 0 ? doneCount / total : 1;
+  ctx.lineWidth = Math.max(2, cell * 0.05);
+  ctx.strokeStyle = 'rgba(255,215,94,0.22)';
+  ctx.beginPath(); ctx.arc(ex[0], ex[1], rr, 0, 7); ctx.stroke();
+  if (frac > 0) {
+    ctx.strokeStyle = '#ffd75e';
+    ctx.beginPath(); ctx.arc(ex[0], ex[1], rr, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2); ctx.stroke();
+  }
+  // start marker (subtle)
+  var sc = px(L.start);
+  ctx.strokeStyle = 'rgba(255,215,94,0.5)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(sc[0], sc[1], cell * 0.32, 0, 7); ctx.stroke();
+  // player
+  var plc = px(state.pos);
+  ctx.beginPath(); ctx.arc(plc[0], plc[1], cell * 0.28, 0, 7);
+  ctx.fillStyle = '#ffd75e'; ctx.shadowColor = '#ffd75e'; ctx.shadowBlur = 12; ctx.fill(); ctx.shadowBlur = 0;
+}
+
+function updateHud() {
+  var L = level();
+  var nv = Object.keys(state.visited).length;
+  document.getElementById('hud-dots').textContent = nv + '/' + L.dots.length;
+  var me = document.getElementById('hud-moves');
+  me.innerHTML = 'MOVES <b>' + state.moves + '/' + L.k + '</b>';
+  me.className = 'moves' + (state.moves >= L.k - 1 ? ' warn' : '');
+}
+
+function allVisited() {
+  var L = level();
+  for (var i = 0; i < L.dots.length; i++)
+    if (!state.visited[key(L.dots[i])]) return false;
+  return true;
+}
+function snapshot() {
+  return {
+    pos: state.pos.slice(),
+    visited: Object.assign({}, state.visited),
+    moves: state.moves,
+    path: state.path.map(function(p) { return p.slice(); })
+  };
+}
+function restore(snap) {
+  state.pos = snap.pos.slice();
+  state.visited = Object.assign({}, snap.visited);
+  state.moves = snap.moves;
+  state.path = snap.path.map(function(p) { return p.slice(); });
+  state.status = 'playing';
+}
+function doUndo() {
+  if (solPlaying || state.status !== 'playing') return;
+  if (history.length === 0) return;
+  restore(history.pop());
+  setMsg('');
+  render(); updateHud();
+}
+
+function doMove(dest) {
+  if (state.status !== 'playing' || solPlaying) return;
+  var L = level();
+  var ok = false, ms = queenMoves(state.pos);
+  for (var i = 0; i < ms.length; i++)
+    if (ms[i][0] === dest[0] && ms[i][1] === dest[1]) { ok = true; break; }
+  if (!ok) return;
+  if (!rayClear(state.pos, dest)) {
+    setMsg('⚠ Blocked by current — follow the cyan arrow.');
+    return;
+  }
+  history.push(snapshot());
+  setMsg('');
+  var dx = sign(dest[0] - state.pos[0]), dy = sign(dest[1] - state.pos[1]);
+  var x = state.pos[0], y = state.pos[1];
+  while (true) {
+    if (isDot([x, y]) && !state.visited[key([x, y])]) state.visited[key([x, y])] = true;
+    if (x === dest[0] && y === dest[1]) break;
+    x += dx; y += dy;
+  }
+  state.pos = dest.slice();
+  state.path.push(dest.slice());
+  state.moves++;
+  var atExit = samePos(state.pos, L.exit);
+  if (allVisited() && atExit) {
+    win();
+  } else if (state.moves >= L.k) {
+    lose();
+  } else if (allVisited()) {
+    setMsg('All dots collected — reach the ◎ exit!');
+  }
+  render(); updateHud();
+}
+function win() {
+  state.status = 'won';
+  setMsg('✓ Solved in ' + state.moves + ' moves!' + (state.moves <= level().optimal ? ' (optimal!)' : ''), 'win');
+}
+function lose() {
+  state.status = 'lost';
+  setMsg('Out of moves — undo (↩) or try again.', 'lose');
+}
+
+canvas.addEventListener('click', function(e) {
+  var r = canvas.getBoundingClientRect();
+  var mx = (e.clientX - r.left) * (canvas.width / r.width);
+  var my = (e.clientY - r.top) * (canvas.height / r.height);
+  var gx = Math.floor((mx - pad) / cell), gy = Math.floor((my - pad) / cell);
+  var L = level();
+  if (gx < 0 || gx >= L.size || gy < 0 || gy >= L.size) return;
+  doMove([gx, gy]);
+});
+
+function renderTabs() {
+  var t = document.getElementById('tabs');
+  t.innerHTML = '';
+  LEVELS.forEach(function(L, i) {
+    var b = document.createElement('button');
+    b.className = 'tab' + (i === cur ? ' active' : '');
+    b.innerHTML = L.name + ' <span class="k">' + L.size + '×' + L.size + ' · K=' + L.k + '</span>';
+    b.onclick = function() { initLevel(i); };
+    t.appendChild(b);
+  });
+}
+
+/* ---- solution ---- */
+function showSolution() {
+  var L = level(), p = document.getElementById('sol-panel');
+  var html = '<b>Optimal solution (' + L.optimal + ' moves, ends at exit):</b><br>';
+  html += '<div class="step">start ' + JSON.stringify(L.start) + '</div>';
+  L.solution.forEach(function(m, i) {
+    html += '<div class="step">' + (i + 1) + '. → ' + JSON.stringify(m) + '</div>';
+  });
+  html += '<div class="aha">' + L.hook + '</div>';
+  p.innerHTML = html; p.className = 'sol-panel show';
+}
+function stopSolPlayback() {
+  solPlaying = false;
+  if (solTimer) { clearInterval(solTimer); solTimer = null; }
+}
+function playSolution() {
+  var L = level();
+  if (solPlaying) return;
+  initLevel(cur);
+  solPlaying = true;
+  var idx = 0;
+  setMsg('Playing solution…');
+  solTimer = setInterval(function() {
+    if (idx >= L.solution.length) {
+      stopSolPlayback();
+      if (allVisited() && samePos(state.pos, L.exit)) win();
+      render(); updateHud();
+      return;
+    }
+    var dest = L.solution[idx++];
+    solPlaying = false; doMove(dest); solPlaying = true;
+    render(); updateHud();
+  }, 900);
+}
+
+document.getElementById('btn-undo').onclick = doUndo;
+document.getElementById('btn-reset').onclick = function() { initLevel(cur); };
+document.getElementById('btn-solution').onclick = showSolution;
+document.getElementById('btn-play-sol').onclick = playSolution;
+window.addEventListener('resize', function() { sizeCanvas(); render(); });
+
+initLevel(0);
+</script>
+</body>
+</html>
