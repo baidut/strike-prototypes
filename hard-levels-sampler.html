@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Strike — Hard Levels Sampler</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0d1119; color: #e8e8ec; font-family: -apple-system, "PingFang SC", "Segoe UI", sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+  h1 { font-size: 22px; margin-bottom: 4px; letter-spacing: 2px; }
+  .sub { color: #666; font-size: 13px; margin-bottom: 18px; }
+  .level-tabs { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; justify-content: center; }
+  .tab { background: #16161c; border: 1px solid #2a2a33; color: #ccc; padding: 10px 18px; border-radius: 10px; cursor: pointer; font-size: 14px; transition: all .15s; }
+  .tab:hover { border-color: #4da6ff; }
+  .tab.active { background: #1d2a3a; border-color: #4da6ff; color: #fff; }
+  .tab .k { color: #ffd166; font-weight: 600; }
+  .hud { display: flex; gap: 24px; margin-bottom: 12px; font-size: 14px; color: #999; }
+  .hud b { color: #ffd166; }
+  .hud .moves.warn { color: #e76e6e; }
+  #board-wrap { position: relative; }
+  canvas { display: block; border-radius: 12px; background: #11141c; cursor: pointer; }
+  .controls { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; justify-content: center; }
+  .btn { background: #1a2030; border: 1px solid #2a3a55; color: #cfe0ff; padding: 9px 16px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+  .btn:hover { background: #24304a; }
+  .btn.gold { border-color: #8a6d1f; color: #ffd166; }
+  .btn.gold:hover { background: #2a2410; }
+  .msg { margin-top: 12px; font-size: 16px; min-height: 24px; }
+  .msg.win { color: #6ee7a0; }
+  .msg.lose { color: #e76e6e; }
+  .sol-panel { margin-top: 10px; max-width: 640px; background: #141a26; border: 1px solid #2a3a55; border-radius: 10px; padding: 12px 16px; font-size: 13px; color: #9fb3d9; display: none; }
+  .sol-panel.show { display: block; }
+  .sol-panel .step { font-family: monospace; margin: 3px 0; }
+  .sol-panel .aha { color: #ffd166; margin-top: 8px; font-style: italic; }
+  .desc { max-width: 640px; color: #777; font-size: 13px; margin-bottom: 12px; text-align: center; line-height: 1.6; }
+</style>
+</head>
+<body>
+<h1>⚡ HARD LEVELS</h1>
+<div class="sub">Strike — high-intensity sampler · v1</div>
+<div class="level-tabs" id="tabs"></div>
+<div class="desc" id="desc"></div>
+<div class="hud">
+  <div>DOTS <b id="hud-dots">0/0</b></div>
+  <div class="moves">MOVES <b id="hud-moves">0/0</b></div>
+</div>
+<div id="board-wrap"><canvas id="board"></canvas></div>
+<div class="controls">
+  <button class="btn" id="btn-reset">↺ Reset</button>
+  <button class="btn gold" id="btn-solution">💡 Show Solution</button>
+  <button class="btn" id="btn-play-sol">▶ Play Solution</button>
+</div>
+<div class="msg" id="msg"></div>
+<div class="sol-panel" id="sol-panel"></div>
+
+<script>
+'use strict';
+/* ================= LEVELS ================= */
+var LEVELS = [
+  {
+    name: 'Shattered Grid',
+    size: 15,
+    start: [0,14],
+    dots: [[0,10],[2,6],[2,10],[2,14],[4,9],[6,2],[6,10],[6,13],[6,14],[7,8],[9,1],[10,2],[10,6],[10,14],[13,8],[14,2],[14,6],[14,10]],
+    k: 10, optimal: 10,
+    desc: '15×15 flagship. The ghost of a 4×4 lattice — four convenient lines removed, six awkward outliers added. Hunt the surviving rows, columns and diagonals, then chain them across the full board.',
+    hook: 'Dense lattice with broken lines. The aha: spotting which "grid lines" survived.',
+    solution: [[14,14],[14,2],[3,13],[8,13],[0,5],[0,12],[11,1],[7,1],[0,8],[14,8]]
+  },
+  {
+    name: 'Comet',
+    size: 13,
+    start: [12,0],
+    dots: [[0,0],[0,11],[3,3],[5,3],[6,1],[6,6],[7,3],[7,10],[8,2],[8,6],[9,8],[9,9],[9,11],[10,4],[11,10],[12,12]],
+    k: 10, optimal: 10,
+    desc: '13×13. A bright diagonal comet-spine (5 dots on the main diagonal) crosses a scattered starfield. The spine is the readable hook; the starfield forces awkward chaining between rides.',
+    hook: 'Diagonal spine + starfield. The aha: riding the spine, then chaining the outliers.',
+    solution: [[12,12],[0,0],[0,12],[10,12],[10,1],[3,1],[12,10],[0,10],[9,1],[9,12]]
+  },
+  {
+    name: 'Last Star',
+    size: 11,
+    start: [7,5],
+    dots: [[0,2],[0,7],[8,0],[4,1],[6,8],[1,6],[6,9],[1,5],[3,0],[9,7],[3,2],[4,6]],
+    k: 9, optimal: 9,
+    extra: { positional: {"8,0": 11}, note: '(8,0) must be the very last dot visited — 11th of 11.' },
+    desc: 'Hardest in the shipped game (W8 Precision). 12 dots, 9 moves — and (8,0) must be visited LAST. Plan the entire route backwards from the finish.',
+    hook: 'Positional constraint. The aha: the last move dictates the whole route.',
+    solution: [[0,5],[4,1],[4,7],[6,9],[6,1],[0,7],[0,0],[9,0],[9,7]]
+  }
+];
+// __SOLUTIONS__ injected by builder
+
+/* ================= ENGINE ================= */
+var DIRS = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+var canvas = document.getElementById('board');
+var ctx = canvas.getContext('2d');
+var cur = 0;             // current level index
+var state = null;        // {pos, visited:Set, moves, status}
+var cell = 40, pad = 24;
+var solPlaying = false, solTimer = null;
+
+function level() { return LEVELS[cur]; }
+
+function initLevel(idx) {
+  cur = idx;
+  stopSolPlayback();
+  var L = level();
+  state = { pos: L.start.slice(), visited: {}, moves: 0, status: 'playing' };
+  if (isDot(L.start)) state.visited[key(L.start)] = true;
+  document.getElementById('desc').textContent = L.desc + (L.extra && L.extra.note ? ' ' + L.extra.note : '');
+  document.getElementById('msg').textContent = '';
+  document.getElementById('msg').className = 'msg';
+  document.getElementById('sol-panel').className = 'sol-panel';
+  sizeCanvas();
+  renderTabs();
+  render();
+  updateHud();
+}
+function key(p) { return p[0] + ',' + p[1]; }
+function isDot(p) {
+  var L = level();
+  for (var i = 0; i < L.dots.length; i++)
+    if (L.dots[i][0] === p[0] && L.dots[i][1] === p[1]) return true;
+  return false;
+}
+function sizeCanvas() {
+  var L = level();
+  cell = Math.min(44, Math.floor(560 / L.size));
+  var s = L.size * cell + pad * 2;
+  canvas.width = s; canvas.height = s;
+  canvas.style.width = s + 'px'; canvas.style.height = s + 'px';
+}
+function px(p) { return [pad + p[0] * cell + cell / 2, pad + p[1] * cell + cell / 2]; }
+
+function queenMoves(from) {
+  var L = level(), out = [];
+  for (var d = 0; d < DIRS.length; d++) {
+    var x = from[0] + DIRS[d][0], y = from[1] + DIRS[d][1];
+    while (x >= 0 && x < L.size && y >= 0 && y < L.size) {
+      out.push([x, y]);
+      x += DIRS[d][0]; y += DIRS[d][1];
+    }
+  }
+  return out;
+}
+
+function render() {
+  var L = level();
+  var s = canvas.width;
+  ctx.clearRect(0, 0, s, s);
+  // chessboard
+  for (var x = 0; x < L.size; x++) for (var y = 0; y < L.size; y++) {
+    if ((x + y) % 2 === 0) {
+      ctx.fillStyle = 'rgba(255,255,255,0.025)';
+      ctx.fillRect(pad + x * cell, pad + y * cell, cell, cell);
+    }
+  }
+  // path
+  if (state.path && state.path.length > 1) {
+    ctx.strokeStyle = 'rgba(255,215,94,0.55)'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath();
+    var p0 = px(state.path[0]); ctx.moveTo(p0[0], p0[1]);
+    for (var i = 1; i < state.path.length; i++) { var p = px(state.path[i]); ctx.lineTo(p[0], p[1]); }
+    ctx.stroke();
+  }
+  // move targets
+  if (state.status === 'playing' && !solPlaying) {
+    var ms = queenMoves(state.pos);
+    ctx.fillStyle = 'rgba(120,170,255,0.18)';
+    for (var i = 0; i < ms.length; i++) {
+      var c = px(ms[i]);
+      ctx.beginPath(); ctx.arc(c[0], c[1], cell * 0.14, 0, 7); ctx.fill();
+    }
+  }
+  // dots
+  for (var i = 0; i < L.dots.length; i++) {
+    var d = L.dots[i], c = px(d);
+    var done = state.visited[key(d)];
+    ctx.beginPath(); ctx.arc(c[0], c[1], cell * 0.22, 0, 7);
+    if (done) { ctx.fillStyle = 'rgba(255,255,255,0.12)'; }
+    else { ctx.fillStyle = '#f2f4f8'; ctx.shadowColor = '#fff'; ctx.shadowBlur = 6; }
+    ctx.fill(); ctx.shadowBlur = 0;
+  }
+  // start marker (subtle)
+  var sc = px(L.start);
+  ctx.strokeStyle = 'rgba(255,215,94,0.5)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(sc[0], sc[1], cell * 0.32, 0, 7); ctx.stroke();
+  // player
+  var pc = px(state.pos);
+  ctx.beginPath(); ctx.arc(pc[0], pc[1], cell * 0.28, 0, 7);
+  ctx.fillStyle = '#ffd75e'; ctx.shadowColor = '#ffd75e'; ctx.shadowBlur = 12; ctx.fill(); ctx.shadowBlur = 0;
+}
+
+function updateHud() {
+  var L = level();
+  var nv = Object.keys(state.visited).length;
+  document.getElementById('hud-dots').textContent = nv + '/' + L.dots.length;
+  var me = document.getElementById('hud-moves');
+  me.innerHTML = 'MOVES <b>' + state.moves + '/' + L.k + '</b>';
+  me.className = 'moves' + (state.moves >= L.k - 1 ? ' warn' : '');
+}
+
+function allVisited() {
+  var L = level();
+  for (var i = 0; i < L.dots.length; i++)
+    if (!state.visited[key(L.dots[i])]) return false;
+  return true;
+}
+function checkPositional() {
+  var L = level();
+  if (!L.extra || !L.extra.positional || !state.visitSeq) return true;
+  // positional: {"x,y": n} means dot (x,y) must be the n-th visited (1-indexed)
+  var req = L.extra.positional;
+  for (var k in req) {
+    var idx = state.visitSeq.indexOf(k);
+    if (idx !== req[k] - 1) return false;
+  }
+  return true;
+}
+
+function doMove(dest) {
+  if (state.status !== 'playing' || solPlaying) return;
+  var L = level();
+  var ok = false, ms = queenMoves(state.pos);
+  for (var i = 0; i < ms.length; i++)
+    if (ms[i][0] === dest[0] && ms[i][1] === dest[1]) { ok = true; break; }
+  if (!ok) return;
+  // mark dots along the ray
+  var dx = Math.sign(dest[0] - state.pos[0]), dy = Math.sign(dest[1] - state.pos[1]);
+  var x = state.pos[0], y = state.pos[1];
+  if (!state.visitSeq) state.visitSeq = [];
+  while (true) {
+    if (isDot([x, y]) && !state.visited[key([x,y])]) {
+      state.visited[key([x,y])] = true;
+      state.visitSeq.push(key([x,y]));
+    }
+    if (x === dest[0] && y === dest[1]) break;
+    x += dx; y += dy;
+  }
+  state.pos = dest.slice();
+  if (!state.path) state.path = [L.start.slice()];
+  state.path.push(dest.slice());
+  state.moves++;
+  // win check
+  if (allVisited()) {
+    if (checkPositional()) { win(); }
+    // else keep playing (positional not met — rare)
+  } else if (state.moves >= L.k) {
+    lose();
+  }
+  render(); updateHud();
+}
+function win() {
+  state.status = 'won';
+  var m = document.getElementById('msg');
+  m.textContent = '✓ Solved in ' + state.moves + ' moves!' + (state.moves <= level().optimal ? ' (optimal!)' : '');
+  m.className = 'msg win';
+}
+function lose() {
+  state.status = 'lost';
+  var m = document.getElementById('msg');
+  m.textContent = 'Out of moves — try again.';
+  m.className = 'msg lose';
+}
+
+canvas.addEventListener('click', function(e) {
+  var r = canvas.getBoundingClientRect();
+  var mx = (e.clientX - r.left) * (canvas.width / r.width);
+  var my = (e.clientY - r.top) * (canvas.height / r.height);
+  var gx = Math.floor((mx - pad) / cell), gy = Math.floor((my - pad) / cell);
+  var L = level();
+  if (gx < 0 || gx >= L.size || gy < 0 || gy >= L.size) return;
+  doMove([gx, gy]);
+});
+
+function renderTabs() {
+  var t = document.getElementById('tabs'); t.innerHTML = '';
+  LEVELS.forEach(function(L, i) {
+    var b = document.createElement('button');
+    b.className = 'tab' + (i === cur ? ' active' : '');
+    b.innerHTML = L.name + ' <span class="k">' + L.size + '×' + L.size + ' · K=' + L.k + '</span>';
+    b.onclick = function() { initLevel(i); };
+    t.appendChild(b);
+  });
+}
+
+/* ---- solution ---- */
+function showSolution() {
+  var L = level(), p = document.getElementById('sol-panel');
+  if (!L.solution) { p.innerHTML = 'Solution not loaded.'; p.className = 'sol-panel show'; return; }
+  var html = '<b>Optimal solution (' + L.optimal + ' moves):</b><br>';
+  html += '<div class="step">start ' + JSON.stringify(L.start) + '</div>';
+  L.solution.forEach(function(m, i) {
+    html += '<div class="step">' + (i+1) + '. → ' + JSON.stringify(m) + '</div>';
+  });
+  html += '<div class="aha">' + L.hook + '</div>';
+  p.innerHTML = html; p.className = 'sol-panel show';
+}
+function stopSolPlayback() {
+  solPlaying = false;
+  if (solTimer) { clearInterval(solTimer); solTimer = null; }
+}
+function playSolution() {
+  var L = level();
+  if (!L.solution || solPlaying) return;
+  initLevel(cur); // reset
+  solPlaying = true;
+  var idx = 0;
+  document.getElementById('msg').textContent = 'Playing solution…';
+  document.getElementById('msg').className = 'msg';
+  solTimer = setInterval(function() {
+    if (idx >= L.solution.length) {
+      stopSolPlayback();
+      // final win check
+      if (allVisited() && checkPositional()) win();
+      render(); updateHud();
+      return;
+    }
+    var dest = L.solution[idx++];
+    // bypass doMove's solPlaying guard by temporarily allowing
+    solPlaying = false; doMove(dest); solPlaying = true;
+    render(); updateHud();
+  }, 900);
+}
+
+document.getElementById('btn-reset').onclick = function() { initLevel(cur); };
+document.getElementById('btn-solution').onclick = showSolution;
+document.getElementById('btn-play-sol').onclick = playSolution;
+window.addEventListener('resize', function() { sizeCanvas(); render(); });
+
+initLevel(0);
+</script>
+</body>
+</html>
